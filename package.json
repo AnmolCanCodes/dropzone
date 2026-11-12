@@ -1,0 +1,26 @@
+{
+  "name": "dropzone",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB -c blue,green \"npm run dev -w @dropzone/backend\" \"npm run dev -w @dropzone/frontend\"",
+    "dev:api": "npm run dev -w @dropzone/backend",
+    "dev:web": "npm run dev -w @dropzone/frontend",
+    "build": "npm run build -w @dropzone/frontend",
+    "start": "npm run start -w @dropzone/backend",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "prettier": "^3.6.2"
+  }
+}
