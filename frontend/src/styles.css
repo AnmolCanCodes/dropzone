@@ -1,0 +1,55 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800;900&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  font-family: 'DM Sans', sans-serif;
+  color: #e9eee8;
+  background: #101511;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+.shell {
+  min-height: 100vh;
+  padding: 28px clamp(22px, 6vw, 88px) 24px;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(90deg, transparent 49.95%, #ffffff08 50%, transparent 50.05%),
+    radial-gradient(ellipse at 75% 40%, #344b302b, transparent 48%),
+    #101511;
+}
+.topline, footer { display: flex; align-items: center; gap: 14px; }
+.brand-mark {
+  display: grid; place-items: center; width: 38px; height: 38px;
+  background: #c8f169; color: #11170d; font: 800 15px 'Barlow Condensed', sans-serif;
+}
+.wordmark { font: 800 19px 'Barlow Condensed', sans-serif; letter-spacing: .13em; }
+.build-label, footer, .eyebrow, .status-panel {
+  font: 11px 'DM Mono', monospace; letter-spacing: .1em; color: #929b90;
+}
+.build-label { margin-left: auto; }
+.hero { width: min(760px, 100%); margin: auto 0; padding: 100px 0 110px; }
+.eyebrow { color: #c8f169; margin-bottom: 25px; }
+h1 {
+  margin: 0; font: 900 clamp(76px, 13vw, 158px)/.78 'Barlow Condensed', sans-serif;
+  letter-spacing: -.035em;
+}
+h1 em { color: #c8f169; font-style: normal; }
+.intro { max-width: 480px; color: #a8b1a5; line-height: 1.75; margin: 34px 0; }
+.status-panel {
+  width: min(430px, 100%); border: 1px solid #354034; padding: 17px 18px;
+  display: flex; align-items: center; gap: 12px;
+}
+.status-panel strong { margin-left: auto; color: #e9eee8; font-weight: 500; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: #d7ae4a; }
+.status-dot.connected { background: #c8f169; box-shadow: 0 0 12px #c8f16988; }
+.status-dot.unavailable { background: #e36c58; }
+footer { border-top: 1px solid #30392f; padding-top: 18px; justify-content: space-between; }
+@media (max-width: 600px) {
+  .hero { padding: 80px 0; }
+  .build-label { font-size: 9px; }
+  footer { font-size: 9px; gap: 12px; }
+}
