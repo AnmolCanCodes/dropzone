@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import GameCanvas from '../components/GameCanvas';
 
 export function App() {
   const [apiStatus, setApiStatus] = useState('checking');
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -18,6 +20,17 @@ export function App() {
 
     return () => controller.abort();
   }, []);
+
+  if (playing) {
+    return (
+      <div className="game-screen">
+        <GameCanvas />
+        <button className="exit-button" onClick={() => setPlaying(false)}>
+          ← EXIT
+        </button>
+      </div>
+    );
+  }
 
   return (
     <main className="shell">
@@ -39,10 +52,13 @@ export function App() {
           <span>BACKEND STATUS</span>
           <strong>{apiStatus.toUpperCase()}</strong>
         </div>
+        <button className="play-button" onClick={() => setPlaying(true)}>
+          ENTER LOCAL ARENA →
+        </button>
       </section>
 
       <footer>
-        <span>PHASE 00 / FOUNDATION</span>
+        <span>PHASE 01 / LOCAL GAME WORLD</span>
         <span>NO MATCHES AVAILABLE YET</span>
       </footer>
     </main>

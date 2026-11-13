@@ -53,3 +53,31 @@ footer { border-top: 1px solid #30392f; padding-top: 18px; justify-content: spac
   .build-label { font-size: 9px; }
   footer { font-size: 9px; gap: 12px; }
 }
+html, body, #root { height: 100%; }
+
+.play-button {
+  margin-top: 20px;
+  padding: 16px 26px;
+  background: #c8f169;
+  color: #11170d;
+  border: 0;
+  cursor: pointer;
+  font: 800 16px 'Barlow Condensed', sans-serif;
+  letter-spacing: .13em;
+}
+.play-button:hover { background: #d6ff7a; }
+
+.game-screen { position: fixed; inset: 0; background: #000; }
+.exit-button {
+  position: absolute;
+  top: 16px; right: 16px;
+  z-index: 10;
+  padding: 8px 14px;
+  background: #101511cc;
+  color: #e9eee8;
+  border: 1px solid #354034;
+  cursor: pointer;
+  font: 11px 'DM Mono', monospace;
+  letter-spacing: .1em;
+}
+.exit-button:hover { border-color: #c8f169; color: #c8f169; }
