@@ -1,12 +1,10 @@
-/**
- * Shared Socket.IO event names.
- * Keep event names centralized so browser and server do not drift apart.
- * Payload schemas will be added as gameplay features are implemented.
- */
 export const CLIENT_EVENTS = Object.freeze({
-  // Example: JOIN_QUEUE: 'matchmaking:join',
+  PLAYER_MOVE: 'player:move',
 });
 
 export const SERVER_EVENTS = Object.freeze({
-  // Example: QUEUE_STATUS: 'matchmaking:status',
+  WORLD_STATE: 'world:state',     // sent to one socket on connect: self id + everyone
+  PLAYER_JOINED: 'player:joined',
+  PLAYER_LEFT: 'player:left',
+  PLAYER_MOVED: 'player:moved',
 });
