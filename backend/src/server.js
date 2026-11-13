@@ -15,10 +15,18 @@ const io = new Server(server);
 const match = new Match();
 registerSocketHandlers(io, match);
 
+let lastLootVersion = -1;
+
 const loop = new GameLoop({
   tickRate: GAME_CONFIG.TICK_RATE,
   onTick: (dt) => {
     match.update(dt);
+
+    if (match.lootVersion !== lastLootVersion) {
+      lastLootVersion = match.lootVersion;
+      io.emit(SERVER_EVENTS.LOOT_STATE, match.getLoot());
+    }
+
     io.emit(SERVER_EVENTS.SNAPSHOT, match.getSnapshot());
   },
 });

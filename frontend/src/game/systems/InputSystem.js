@@ -20,6 +20,7 @@ export default class InputSystem {
       aimAngle: Math.atan2(pointer.worldY - player.y, pointer.worldX - player.x),
       fire: pointer.leftButtonDown(),
       reload: this.keys.reload.isDown,
+      pickup: this.keys.pickup.isDown,
     };
   }
 }

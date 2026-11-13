@@ -1,3 +1,5 @@
+export const APP_NAME = 'DropZone';
+
 export const GAME_CONFIG = Object.freeze({
   TICK_RATE: 20,
   MAX_PLAYERS_PER_MATCH: 30,
@@ -7,4 +9,12 @@ export const GAME_CONFIG = Object.freeze({
   PLAYER_RADIUS: 18,
   PLAYER_MAX_HEALTH: 100,
   BULLET_RADIUS: 5,
+});
+
+export const MATCH_STATE = Object.freeze({
+  WAITING: 'WAITING',
+  COUNTDOWN: 'COUNTDOWN',
+  ACTIVE: 'ACTIVE',
+  FINISHED: 'FINISHED',
+  CANCELLED: 'CANCELLED',
 });

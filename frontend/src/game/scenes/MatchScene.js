@@ -1,14 +1,16 @@
 import Phaser from 'phaser';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '@dropzone/shared/events';
-import { GAME_CONFIG } from '@dropzone/shared/constants';
+import { GAME_CONFIG, MATCH_STATE } from '@dropzone/shared/constants';
 import { WORLD_WIDTH, WORLD_HEIGHT, INTERPOLATION_DELAY_MS } from '../config';
 import PlayerView from '../entities/PlayerView';
 import ProjectileView from '../entities/ProjectileView';
+import LootView from '../entities/LootView';
 import InputSystem from '../systems/InputSystem';
 import SnapshotBuffer from '../network/SnapshotBuffer';
 import { createSocket } from '../network/socket';
 
 const INPUT_INTERVAL_MS = 1000 / GAME_CONFIG.TICK_RATE;
+const shortId = (id) => id.slice(0, 4).toUpperCase();
 
 export default class MatchScene extends Phaser.Scene {
   constructor() {
@@ -16,14 +18,30 @@ export default class MatchScene extends Phaser.Scene {
   }
 
   create() {
-    this.add.grid(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 100, 100, 0x2d4a2d, 1, 0x3a5f3a, 1);
-    this.add.rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT).setStrokeStyle(8, 0xff4444);
+    // Explicit depths: grid < border < zone tint < zone lines < loot < players/bullets < UI
+    this.add.grid(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 100, 100, 0x2d4a2d, 1, 0x3a5f3a, 1).setDepth(-10);
+    this.add.rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT).setStrokeStyle(8, 0xff4444).setDepth(-9);
+
+    // Red tint everywhere OUTSIDE the safe circle (a circle mask with inverted alpha)
+    this.zoneMaskShape = this.make.graphics({ add: false });
+    this.zoneOverlay = this.add
+      .rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 0xff2d2d, 0.16)
+      .setDepth(-8)
+      .setVisible(false);
+    const mask = this.zoneMaskShape.createGeometryMask();
+    mask.setInvertAlpha(true);
+    this.zoneOverlay.setMask(mask);
+
+    this.zoneLines = this.add.graphics().setDepth(-7);
 
     this.playerViews = new Map();
     this.projectileViews = new Map();
+    this.lootViews = new Map();
     this.selfId = null;
     this.localView = null;
     this.localState = null;
+    this.latestMatch = null;
+    this.latestZone = null;
     this.latestTick = 0;
     this.sequence = 0;
     this.inputTimer = 0;
@@ -35,6 +53,19 @@ export default class MatchScene extends Phaser.Scene {
 
     this.hud = this.add
       .text(16, 16, 'Connecting...', { fontFamily: 'monospace', fontSize: '16px', color: '#ffffff' })
+      .setScrollFactor(0)
+      .setDepth(100);
+
+    this.banner = this.add
+      .text(0, 0, '', {
+        fontFamily: 'monospace',
+        fontSize: '36px',
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 6,
+        align: 'center',
+      })
+      .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(100);
 
@@ -54,8 +85,12 @@ export default class MatchScene extends Phaser.Scene {
       this.selfId = selfId;
     });
 
+    this.socket.on(SERVER_EVENTS.LOOT_STATE, (items) => this.setLoot(items));
+
     this.socket.on(SERVER_EVENTS.SNAPSHOT, (snapshot) => {
       this.latestTick = snapshot.tick;
+      this.latestMatch = snapshot.match;
+      this.latestZone = snapshot.zone;
       this.snapshots.push(snapshot);
     });
 
@@ -70,6 +105,14 @@ export default class MatchScene extends Phaser.Scene {
     this.projectileViews.clear();
     this.localView = null;
     this.localState = null;
+    this.latestMatch = null;
+    this.latestZone = null;
+  }
+
+  setLoot(items) {
+    this.lootViews.forEach((view) => view.destroy());
+    this.lootViews.clear();
+    for (const item of items) this.lootViews.set(item.id, new LootView(this, item));
   }
 
   /** Draws the world as it was INTERPOLATION_DELAY_MS ago, blended between two snapshots. */
@@ -105,7 +148,7 @@ export default class MatchScene extends Phaser.Scene {
       const angle = start.aimAngle + Phaser.Math.Angle.Wrap(target.aimAngle - start.aimAngle) * alpha;
 
       view.setState(x, y, angle);
-      view.setStatus(target); // health/alive change in steps, so no blending
+      view.setStatus(target);
       if (target.id === this.selfId) this.localState = target;
       present.add(target.id);
     }
@@ -146,6 +189,21 @@ export default class MatchScene extends Phaser.Scene {
     }
   }
 
+  renderZone() {
+    const zone = this.latestZone;
+    if (!zone) return;
+
+    this.zoneOverlay.setVisible(true);
+
+    this.zoneMaskShape.clear();
+    this.zoneMaskShape.fillStyle(0xffffff, 1);
+    this.zoneMaskShape.fillCircle(zone.x, zone.y, zone.radius);
+
+    this.zoneLines.clear();
+    this.zoneLines.lineStyle(6, 0xff4d4d, 1).strokeCircle(zone.x, zone.y, zone.radius); // current edge
+    this.zoneLines.lineStyle(3, 0xffffff, 0.9).strokeCircle(zone.targetX, zone.targetY, zone.targetRadius); // next safe area
+  }
+
   sendInput(delta) {
     this.inputTimer += delta;
     if (this.inputTimer < INPUT_INTERVAL_MS) return;
@@ -157,23 +215,62 @@ export default class MatchScene extends Phaser.Scene {
     this.socket.emit(CLIENT_EVENTS.PLAYER_INPUT, { sequence: ++this.sequence, ...input });
   }
 
-  updateHud() {
-    if (!this.localState) return;
+  updateUi() {
+    this.banner.setPosition(this.scale.width / 2, this.scale.height * 0.22);
+
+    const match = this.latestMatch;
     const s = this.localState;
+    if (!match || !s) return;
+
+    this.banner.setText(this.bannerText(match, s));
 
     const lines = [
       `HP: ${s.health}   Kills: ${s.kills}`,
       `Ammo: ${s.ammo}${s.reloading ? '  (RELOADING)' : ''}`,
-      `Players: ${this.playerViews.size}   Tick: ${this.latestTick}`,
+      `Alive: ${match.aliveCount}/${match.playerCount}   Tick: ${this.latestTick}`,
     ];
-    if (!s.alive) lines.push('', 'ELIMINATED - respawning (dev mode)');
 
+    const zone = this.latestZone;
+    if (match.state === MATCH_STATE.ACTIVE && zone) {
+      if (zone.finished) {
+        lines.push('Zone: final circle');
+      } else {
+        const verb = zone.stage === 'hold' ? 'shrinks in' : 'shrinking, done in';
+        lines.push(`Zone ${zone.phase}/${zone.phases}: ${verb} ${zone.timer}s  (${zone.damagePerSecond} dmg/s outside)`);
+      }
+
+      const outside = this.localView && Math.hypot(this.localView.x - zone.x, this.localView.y - zone.y) > zone.radius;
+      if (outside && s.alive) lines.push('>> OUTSIDE THE ZONE - TAKING DAMAGE <<');
+    }
+
+    lines.push('', 'WASD move | Mouse aim | Click fire | R reload | E pick up', 'Green = medkit, Orange = rifle');
     this.hud.setText(lines.join('\n'));
+  }
+
+  bannerText(match, s) {
+    switch (match.state) {
+      case MATCH_STATE.WAITING:
+        return `WAITING FOR PLAYERS\n${match.playerCount}/${match.minPlayers}`;
+      case MATCH_STATE.COUNTDOWN:
+        return `MATCH STARTS IN ${match.timer}`;
+      case MATCH_STATE.ACTIVE:
+        if (s.spectator) return 'MATCH IN PROGRESS\nYou join the next round';
+        return s.alive ? '' : 'ELIMINATED';
+      case MATCH_STATE.FINISHED: {
+        const result = match.winnerId === this.selfId ? 'VICTORY!' : match.winnerId ? `WINNER: ${shortId(match.winnerId)}` : 'DRAW';
+        return `${result}\nNext round in ${match.timer}s`;
+      }
+      case MATCH_STATE.CANCELLED:
+        return 'MATCH CANCELLED';
+      default:
+        return '';
+    }
   }
 
   update(_time, delta) {
     this.renderSnapshots();
     this.sendInput(delta);
-    this.updateHud();
+    this.renderZone();
+    this.updateUi();
   }
 }

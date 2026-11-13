@@ -14,12 +14,14 @@ const inputSchema = z.object({
   aimAngle: z.number().finite(),
   fire: z.boolean(),
   reload: z.boolean(),
+  pickup: z.boolean(),
 });
 
 export function registerSocketHandlers(io, match) {
   io.on('connection', (socket) => {
     match.addPlayer(socket.id);
     socket.emit(SERVER_EVENTS.WELCOME, { selfId: socket.id });
+    socket.emit(SERVER_EVENTS.LOOT_STATE, match.getLoot());
     console.log(`Player joined: ${socket.id} (${match.players.size} online)`);
 
     let windowStart = Date.now();
