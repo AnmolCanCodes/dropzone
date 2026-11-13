@@ -2,13 +2,13 @@ export default class InputSystem {
   constructor(scene) {
     this.scene = scene;
     this.keys = scene.input.keyboard.addKeys({
-      up: "W", down: "S", left: "A", right: "D", pickup: "E",
+      up: 'W', down: 'S', left: 'A', right: 'D', reload: 'R', pickup: 'E',
     });
   }
 
   read(player) {
     const pointer = this.scene.input.activePointer;
-    pointer.updateWorldPoint(this.scene.cameras.main); // keeps aim correct while camera moves
+    pointer.updateWorldPoint(this.scene.cameras.main);
 
     return {
       movement: {
@@ -19,6 +19,7 @@ export default class InputSystem {
       },
       aimAngle: Math.atan2(pointer.worldY - player.y, pointer.worldX - player.x),
       fire: pointer.leftButtonDown(),
+      reload: this.keys.reload.isDown,
     };
   }
 }

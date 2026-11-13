@@ -13,6 +13,7 @@ const inputSchema = z.object({
   }),
   aimAngle: z.number().finite(),
   fire: z.boolean(),
+  reload: z.boolean(),
 });
 
 export function registerSocketHandlers(io, match) {
