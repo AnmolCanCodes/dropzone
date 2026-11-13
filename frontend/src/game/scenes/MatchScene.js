@@ -1,13 +1,13 @@
 import Phaser from 'phaser';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '@dropzone/shared/events';
 import { GAME_CONFIG } from '@dropzone/shared/constants';
-import { WORLD_WIDTH, WORLD_HEIGHT } from '../config';
-import Player from '../entities/Player';
-import RemotePlayer from '../entities/RemotePlayer';
+import { WORLD_WIDTH, WORLD_HEIGHT, INTERPOLATION_DELAY_MS } from '../config';
+import PlayerView from '../entities/PlayerView';
 import InputSystem from '../systems/InputSystem';
+import SnapshotBuffer from '../network/SnapshotBuffer';
 import { createSocket } from '../network/socket';
 
-const SEND_INTERVAL_MS = 1000 / GAME_CONFIG.TICK_RATE;
+const INPUT_INTERVAL_MS = 1000 / GAME_CONFIG.TICK_RATE;
 
 export default class MatchScene extends Phaser.Scene {
   constructor() {
@@ -18,9 +18,13 @@ export default class MatchScene extends Phaser.Scene {
     this.add.grid(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT, 100, 100, 0x2d4a2d, 1, 0x3a5f3a, 1);
     this.add.rectangle(WORLD_WIDTH / 2, WORLD_HEIGHT / 2, WORLD_WIDTH, WORLD_HEIGHT).setStrokeStyle(8, 0xff4444);
 
-    this.player = null;
-    this.remotePlayers = new Map();
-    this.sendTimer = 0;
+    this.views = new Map();
+    this.selfId = null;
+    this.localView = null;
+    this.latestTick = 0;
+    this.sequence = 0;
+    this.inputTimer = 0;
+    this.snapshots = new SnapshotBuffer();
     this.inputSystem = new InputSystem(this);
 
     this.cameras.main.setBounds(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
@@ -40,68 +44,89 @@ export default class MatchScene extends Phaser.Scene {
   connect() {
     this.socket = createSocket();
 
-    this.socket.on(SERVER_EVENTS.WORLD_STATE, ({ selfId, players }) => {
-      this.resetPlayers(); // also covers reconnects
-      for (const p of players) {
-        if (p.id === selfId) this.spawnLocalPlayer(p);
-        else this.addRemotePlayer(p);
-      }
+    this.socket.on(SERVER_EVENTS.WELCOME, ({ selfId }) => {
+      // Fresh start (also covers reconnects, which give a new socket id)
+      this.clearViews();
+      this.snapshots.clear();
+      this.selfId = selfId;
     });
 
-    this.socket.on(SERVER_EVENTS.PLAYER_JOINED, (p) => this.addRemotePlayer(p));
-
-    this.socket.on(SERVER_EVENTS.PLAYER_LEFT, ({ id }) => {
-      this.remotePlayers.get(id)?.destroy();
-      this.remotePlayers.delete(id);
-    });
-
-    this.socket.on(SERVER_EVENTS.PLAYER_MOVED, ({ id, x, y, aimAngle }) => {
-      this.remotePlayers.get(id)?.setTarget(x, y, aimAngle);
+    this.socket.on(SERVER_EVENTS.SNAPSHOT, (snapshot) => {
+      this.latestTick = snapshot.tick;
+      this.snapshots.push(snapshot);
     });
 
     this.socket.on('disconnect', () => this.hud.setText('Disconnected. Reconnecting...'));
   }
 
-  resetPlayers() {
-    this.player?.body.destroy();
-    this.player?.gun.destroy();
-    this.player = null;
-    this.remotePlayers.forEach((r) => r.destroy());
-    this.remotePlayers.clear();
+  clearViews() {
+    this.cameras.main.stopFollow();
+    this.views.forEach((view) => view.destroy());
+    this.views.clear();
+    this.localView = null;
   }
 
-  spawnLocalPlayer(p) {
-    this.player = new Player(this, p.x, p.y);
-    this.cameras.main.startFollow(this.player.body, true, 0.1, 0.1);
+  /** Draws the world as it was INTERPOLATION_DELAY_MS ago, blended between two snapshots. */
+  renderSnapshots() {
+    const sample = this.snapshots.sample(performance.now() - INTERPOLATION_DELAY_MS);
+    if (!sample) return;
+
+    const { from, to, alpha } = sample;
+    const fromById = new Map(from.players.map((p) => [p.id, p]));
+    const present = new Set();
+
+    for (const target of to.players) {
+      const start = fromById.get(target.id) ?? target; // just joined: no previous state
+      let view = this.views.get(target.id);
+
+      if (!view) {
+        const isLocal = target.id === this.selfId;
+        view = new PlayerView(this, isLocal);
+        this.views.set(target.id, view);
+        if (isLocal) {
+          this.localView = view;
+          this.cameras.main.startFollow(view.body, true, 0.1, 0.1);
+        }
+      }
+
+      const x = Phaser.Math.Linear(start.x, target.x, alpha);
+      const y = Phaser.Math.Linear(start.y, target.y, alpha);
+      // Take the shortest way around the circle, so the aim doesn't spin at the ±π wrap
+      const angle = start.aimAngle + Phaser.Math.Angle.Wrap(target.aimAngle - start.aimAngle) * alpha;
+
+      view.setState(x, y, angle);
+      present.add(target.id);
+    }
+
+    // Anyone not in the newer snapshot has left
+    for (const [id, view] of this.views) {
+      if (!present.has(id)) {
+        view.destroy();
+        this.views.delete(id);
+      }
+    }
   }
 
-  addRemotePlayer(p) {
-    if (this.remotePlayers.has(p.id)) return;
-    this.remotePlayers.set(p.id, new RemotePlayer(this, p.id, p.x, p.y, p.aimAngle));
+  sendInput(delta) {
+    this.inputTimer += delta;
+    if (this.inputTimer < INPUT_INTERVAL_MS) return;
+    this.inputTimer = 0;
+
+    if (!this.localView || !this.socket.connected) return;
+
+    const input = this.inputSystem.read(this.localView);
+    this.socket.emit(CLIENT_EVENTS.PLAYER_INPUT, { sequence: ++this.sequence, ...input });
   }
 
   update(_time, delta) {
-    if (!this.player) return; // not spawned yet
+    this.renderSnapshots();
+    this.sendInput(delta);
 
-    const dt = delta / 1000;
-    const input = this.inputSystem.read(this.player);
-    this.player.applyInput(input, dt);
-
-    // Send position ~20 times per second, not every frame
-    this.sendTimer += delta;
-    if (this.sendTimer >= SEND_INTERVAL_MS) {
-      this.sendTimer = 0;
-      this.socket.emit(CLIENT_EVENTS.PLAYER_MOVE, {
-        x: this.player.x,
-        y: this.player.y,
-        aimAngle: input.aimAngle,
-      });
+    if (this.localView) {
+      this.hud.setText(
+        `X: ${Math.round(this.localView.x)}  Y: ${Math.round(this.localView.y)}\n` +
+        `Players: ${this.views.size}\nServer tick: ${this.latestTick}`
+      );
     }
-
-    this.remotePlayers.forEach((r) => r.update(dt));
-
-    this.hud.setText(
-      `HP: ${this.player.health}\nX: ${Math.round(this.player.x)}  Y: ${Math.round(this.player.y)}\nPlayers: ${this.remotePlayers.size + 1}`
-    );
   }
 }

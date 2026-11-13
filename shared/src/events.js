@@ -1,10 +1,8 @@
 export const CLIENT_EVENTS = Object.freeze({
-  PLAYER_MOVE: 'player:move',
+  PLAYER_INPUT: 'player:input',
 });
 
 export const SERVER_EVENTS = Object.freeze({
-  WORLD_STATE: 'world:state',     // sent to one socket on connect: self id + everyone
-  PLAYER_JOINED: 'player:joined',
-  PLAYER_LEFT: 'player:left',
-  PLAYER_MOVED: 'player:moved',
+  WELCOME: 'match:welcome',   // to one socket on connect: { selfId }
+  SNAPSHOT: 'match:snapshot', // to everyone every tick: { tick, players: [...] }
 });

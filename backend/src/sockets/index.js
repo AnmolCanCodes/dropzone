@@ -1,58 +1,48 @@
+import { z } from 'zod';
 import { CLIENT_EVENTS, SERVER_EVENTS } from '@dropzone/shared/events';
-import { GAME_CONFIG } from '@dropzone/shared/constants';
 
-const { WORLD_WIDTH, WORLD_HEIGHT } = GAME_CONFIG;
+const MAX_INPUTS_PER_SECOND = 60;
 
-// Temporary in-memory state. In Milestone 3 this moves into backend/src/game/.
-const players = new Map();
+const inputSchema = z.object({
+  sequence: z.number().int().nonnegative(),
+  movement: z.object({
+    up: z.boolean(),
+    down: z.boolean(),
+    left: z.boolean(),
+    right: z.boolean(),
+  }),
+  aimAngle: z.number().finite(),
+  fire: z.boolean(),
+});
 
-function randomSpawn() {
-  const margin = 200;
-  return {
-    x: margin + Math.random() * (WORLD_WIDTH - margin * 2),
-    y: margin + Math.random() * (WORLD_HEIGHT - margin * 2),
-  };
-}
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function parseMove(payload) {
-  if (!payload || typeof payload !== 'object') return null;
-  const { x, y, aimAngle } = payload;
-  if (![x, y, aimAngle].every(Number.isFinite)) return null;
-  return {
-    x: clamp(x, 0, WORLD_WIDTH),
-    y: clamp(y, 0, WORLD_HEIGHT),
-    aimAngle,
-  };
-}
-
-export function registerSocketHandlers(io) {
+export function registerSocketHandlers(io, match) {
   io.on('connection', (socket) => {
-    const player = { id: socket.id, ...randomSpawn(), aimAngle: 0 };
-    players.set(socket.id, player);
-    console.log(`Player joined: ${socket.id} (${players.size} online)`);
+    match.addPlayer(socket.id);
+    socket.emit(SERVER_EVENTS.WELCOME, { selfId: socket.id });
+    console.log(`Player joined: ${socket.id} (${match.players.size} online)`);
 
-    socket.emit(SERVER_EVENTS.WORLD_STATE, {
-      selfId: socket.id,
-      players: [...players.values()],
-    });
-    socket.broadcast.emit(SERVER_EVENTS.PLAYER_JOINED, player);
+    let windowStart = Date.now();
+    let inputsInWindow = 0;
 
-    socket.on(CLIENT_EVENTS.PLAYER_MOVE, (payload) => {
-      const move = parseMove(payload);
-      if (!move) return; // ignore invalid payloads
+    socket.on(CLIENT_EVENTS.PLAYER_INPUT, (payload) => {
+      // Rate limit: drop anything above the allowed rate
+      const now = Date.now();
+      if (now - windowStart >= 1000) {
+        windowStart = now;
+        inputsInWindow = 0;
+      }
+      if (++inputsInWindow > MAX_INPUTS_PER_SECOND) return;
 
-      Object.assign(player, move);
-      socket.broadcast.emit(SERVER_EVENTS.PLAYER_MOVED, { id: socket.id, ...move });
+      // Validate shape; unknown fields are stripped by Zod
+      const parsed = inputSchema.safeParse(payload);
+      if (!parsed.success) return;
+
+      match.setInput(socket.id, parsed.data);
     });
 
     socket.on('disconnect', () => {
-      players.delete(socket.id);
-      io.emit(SERVER_EVENTS.PLAYER_LEFT, { id: socket.id });
-      console.log(`Player left: ${socket.id} (${players.size} online)`);
+      match.removePlayer(socket.id);
+      console.log(`Player left: ${socket.id} (${match.players.size} online)`);
     });
   });
 }
