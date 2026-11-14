@@ -1,37 +1,16 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17
     container_name: dropzone-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: dropzone
-      POSTGRES_PASSWORD: dropzone_dev_password
+      POSTGRES_PASSWORD: change-me      # local dev only
       POSTGRES_DB: dropzone
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"           # reachable from your machine only, not the network
     volumes:
-      - dropzone-postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dropzone -d dropzone"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    container_name: dropzone-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    volumes:
-      - dropzone-redis-data:/data
-    command: ["redis-server", "--appendonly", "yes"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
+      - dropzone-pgdata:/var/lib/postgresql/data
 
 volumes:
-  dropzone-postgres-data:
-  dropzone-redis-data:
+  dropzone-pgdata:
