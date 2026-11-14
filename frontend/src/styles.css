@@ -55,17 +55,124 @@ footer { border-top: 1px solid #30392f; padding-top: 18px; justify-content: spac
 }
 html, body, #root { height: 100%; }
 
-.play-button {
-  margin-top: 20px;
-  padding: 16px 26px;
-  background: #c8f169;
-  color: #11170d;
+.play-button,
+.primary-button,
+.secondary-button,
+.tab {
   border: 0;
   cursor: pointer;
   font: 800 16px 'Barlow Condensed', sans-serif;
   letter-spacing: .13em;
+  transition: transform 0.15s ease, filter 0.15s ease;
 }
-.play-button:hover { background: #d6ff7a; }
+
+.play-button,
+.primary-button {
+  margin-top: 20px;
+  padding: 16px 26px;
+  background: #c8f169;
+  color: #11170d;
+}
+
+.play-button:hover,
+.primary-button:hover,
+.secondary-button:hover,
+.tab:hover { filter: brightness(1.04); }
+
+.secondary-button {
+  padding: 14px 22px;
+  background: transparent;
+  color: #e9eee8;
+  border: 1px solid #354034;
+}
+
+.auth-shell { gap: 12px; }
+.auth-hero { padding-top: 48px; }
+.auth-panel {
+  width: min(460px, 100%);
+  margin-top: 24px;
+  border: 1px solid #2d392f;
+  background: rgba(11, 16, 12, 0.8);
+  padding: 22px 20px;
+}
+.auth-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.tab {
+  padding: 12px 14px;
+  background: #101511;
+  color: #b6c0b2;
+  border: 1px solid #2f392e;
+}
+.tab.active {
+  background: #c8f169;
+  color: #0d120c;
+}
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+.auth-form label {
+  display: grid;
+  gap: 8px;
+  color: #cdd4cc;
+  font: 11px 'DM Mono', monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.auth-form input {
+  background: #101511;
+  border: 1px solid #354034;
+  color: #edf1eb;
+  padding: 14px 14px;
+  font: 500 16px 'DM Sans', sans-serif;
+}
+.auth-form input:focus {
+  outline: 2px solid rgba(200, 241, 105, 0.4);
+  border-color: #c8f169;
+}
+.error-message {
+  margin: 0;
+  color: #ff7b6b;
+  font: 11px 'DM Mono', monospace;
+  letter-spacing: .08em;
+}
+.account-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 18px;
+  background: rgba(200, 241, 105, 0.06);
+  border: 1px solid #3a463a;
+}
+.account-card .label {
+  font: 11px 'DM Mono', monospace;
+  color: #b9c7b1;
+  letter-spacing: .12em;
+}
+.account-card strong {
+  font: 700 28px 'Barlow Condensed', sans-serif;
+  letter-spacing: .04em;
+  color: #edf1eb;
+}
+.account-card span:last-child {
+  color: #b9c7b1;
+}
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.primary-button:disabled,
+.secondary-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
 
 .game-screen { position: fixed; inset: 0; background: #000; }
 .exit-button {

@@ -85,6 +85,14 @@ export default class MatchScene extends Phaser.Scene {
       this.selfId = selfId;
     });
 
+    this.socket.on('connect_error', (error) => {
+      this.hud.setText(
+        error.message === 'UNAUTHENTICATED'
+          ? 'Session expired. Please log in again.'
+          : 'Cannot reach the server...'
+      );
+    });
+
     this.socket.on(SERVER_EVENTS.LOOT_STATE, (items) => this.setLoot(items));
 
     this.socket.on(SERVER_EVENTS.SNAPSHOT, (snapshot) => {

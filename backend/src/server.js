@@ -4,15 +4,24 @@ import { GAME_CONFIG } from '@dropzone/shared/constants';
 import { SERVER_EVENTS } from '@dropzone/shared/events';
 import { app } from './app.js';
 import { env } from './config/env.js';
+import { prisma } from './db/prisma.js';
 import { Match } from './game/engine/Match.js';
 import { GameLoop } from './game/engine/GameLoop.js';
+import { saveMatchResult } from './services/match.service.js';
 import { registerSocketHandlers } from './sockets/index.js';
 
 const server = createServer(app);
 const io = new Server(server);
 
 // One global match for now. Matchmaking (Milestone 7) will create matches on demand.
-const match = new Match();
+const match = new Match({
+  onMatchFinished: (result) => {
+    // Deliberately not awaited: the game loop must never wait for the database.
+    saveMatchResult(result)
+      .then((saved) => console.log(`Saved match ${saved.matchId} (${saved.playerCount} players)`))
+      .catch((error) => console.error('Failed to save match result:', error));
+  },
+});
 registerSocketHandlers(io, match);
 
 let lastLootVersion = -1;
@@ -40,11 +49,12 @@ function shutdown(signal) {
   console.log(`${signal} received. Closing server...`);
   loop.stop();
 
-  io.close((error) => {
+  io.close(async (error) => {
     if (error) {
       console.error('Error while closing server:', error);
       process.exit(1);
     }
+    await prisma.$disconnect();
     console.log('Server closed.');
     process.exit(0);
   });

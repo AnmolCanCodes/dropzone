@@ -30,22 +30,31 @@ function randomSpawn() {
   return randomPointInCircle(ISLAND.x, ISLAND.y, ISLAND.radius - RULES.SPAWN_INSET);
 }
 
-function createPlayer(id) {
+function createPlayer(id, userId = null, username = 'anonymous') {
   return {
-    id,
+    id, // socket id: identifies this connection inside the match
+    userId, // account id: identifies the person, used for saving results
+    username,
     ...randomSpawn(),
     aimAngle: 0,
     health: PLAYER_MAX_HEALTH,
     alive: true,
     spectator: false, // joined mid-match: watches until the next round
     kills: 0,
+    eliminatedAt: null, // seconds into the ACTIVE phase when they died
     weapon: createWeaponState(DEFAULT_WEAPON),
     input: IDLE_INPUT,
   };
 }
 
 export class Match {
-  constructor() {
+  /**
+   * onMatchFinished(result) is called once per finished match with plain data.
+   * The engine never touches the database; whoever creates the Match decides what to do with it.
+   */
+  constructor({ onMatchFinished } = {}) {
+    this.onMatchFinished = onMatchFinished ?? null;
+
     this.state = MATCH_STATE.WAITING;
     this.stateTimer = 0;
     this.winnerId = null;
@@ -60,12 +69,17 @@ export class Match {
 
     this.zone = createZone();
     this.tick = 0;
+
+    // Bookkeeping for the result of the current ACTIVE phase
+    this.startedAt = null; // real clock time when the match went live
+    this.activeElapsed = 0; // simulated seconds since it went live
+    this.departed = []; // players who disconnected mid-match
   }
 
   // ---------- roster ----------
 
-  addPlayer(id) {
-    const player = createPlayer(id);
+  addPlayer(id, userId = null, username = 'anonymous') {
+    const player = createPlayer(id, userId, username);
     if (this.state === MATCH_STATE.ACTIVE) {
       // Roster is locked once the match is live
       player.alive = false;
@@ -76,6 +90,17 @@ export class Match {
   }
 
   removePlayer(id) {
+    const player = this.players.get(id);
+
+    if (player && this.state === MATCH_STATE.ACTIVE && !player.spectator) {
+      // Leaving mid-match counts as being eliminated right now
+      this.departed.push({
+        userId: player.userId,
+        kills: player.kills,
+        eliminatedAt: player.alive ? this.activeElapsed : player.eliminatedAt,
+      });
+    }
+
     this.players.delete(id);
   }
 
@@ -131,6 +156,7 @@ export class Match {
         alive: true,
         spectator: false,
         kills: 0,
+        eliminatedAt: null,
         weapon: createWeaponState(DEFAULT_WEAPON),
       });
     }
@@ -174,11 +200,17 @@ export class Match {
       this.returnToWaiting();
       return;
     }
+
     this.stateTimer -= dt;
-    if (this.stateTimer <= EPSILON) this.transitionTo(MATCH_STATE.ACTIVE);
+    if (this.stateTimer <= EPSILON && this.transitionTo(MATCH_STATE.ACTIVE)) {
+      this.startedAt = new Date();
+      this.activeElapsed = 0;
+      this.departed = [];
+    }
   }
 
   updateActive(dt) {
+    this.activeElapsed += dt;
     updateZone(this.zone, dt);
     const zoneDamage = getZoneDamagePerSecond(this.zone) * dt;
 
@@ -235,6 +267,8 @@ export class Match {
     if (victim.health > 0) return;
 
     victim.alive = false;
+    victim.eliminatedAt = this.activeElapsed;
+
     const attacker = attackerId ? this.players.get(attackerId) : null;
     if (attacker) attacker.kills += 1;
     console.log(`Player ${victim.id} eliminated by ${attackerId ?? 'the zone'}`);
@@ -242,7 +276,7 @@ export class Match {
 
   checkMatchEnd() {
     if (this.players.size === 0) {
-      this.transitionTo(MATCH_STATE.CANCELLED, 0);
+      this.transitionTo(MATCH_STATE.CANCELLED, 0); // cancelled matches are not recorded
       return;
     }
 
@@ -250,7 +284,66 @@ export class Match {
     if (survivors.length > 1) return;
 
     this.winnerId = survivors[0]?.id ?? null; // null = nobody left (a draw)
-    this.transitionTo(MATCH_STATE.FINISHED, RULES.RESULT_SECONDS);
+
+    // Only reached once per match: the transition out of ACTIVE happens exactly once
+    if (this.transitionTo(MATCH_STATE.FINISHED, RULES.RESULT_SECONDS)) this.reportResult();
+  }
+
+  // ---------- results ----------
+
+  reportResult() {
+    if (!this.onMatchFinished) return;
+
+    const result = this.buildResult();
+    if (result.participants.length === 0) return;
+
+    try {
+      this.onMatchFinished(result);
+    } catch (error) {
+      console.error('Match result callback failed:', error);
+    }
+  }
+
+  /** Plain data only. Placement is decided by who lasted longest; equal times share a placement. */
+  buildResult() {
+    const entries = [
+      ...[...this.players.values()]
+        .filter((p) => !p.spectator)
+        .map((p) => ({
+          userId: p.userId,
+          kills: p.kills,
+          eliminatedAt: p.alive ? Infinity : p.eliminatedAt,
+        })),
+      ...this.departed,
+    ].filter((entry) => entry.userId); // only real accounts can be saved
+
+    entries.sort((a, b) => {
+      if (a.eliminatedAt === b.eliminatedAt) return 0;
+      return b.eliminatedAt > a.eliminatedAt ? 1 : -1;
+    });
+
+    let placement = 0;
+    let previous = null;
+    const participants = entries.map((entry, index) => {
+      if (entry.eliminatedAt !== previous) {
+        placement = index + 1;
+        previous = entry.eliminatedAt;
+      }
+      return {
+        userId: entry.userId,
+        placement,
+        kills: entry.kills,
+        survivedSeconds: Math.round(Math.min(entry.eliminatedAt, this.activeElapsed)),
+      };
+    });
+
+    const winner = this.players.get(this.winnerId);
+    return {
+      winnerUserId: winner?.userId ?? null,
+      startedAt: this.startedAt,
+      endedAt: new Date(),
+      participants,
+    };
   }
 
   // ---------- network views ----------
