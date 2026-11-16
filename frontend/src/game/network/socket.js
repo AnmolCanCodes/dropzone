@@ -1,10 +1,11 @@
 import { io } from 'socket.io-client';
+import { TOKEN_KEY } from '../../services/session';
 
 export function createSocket() {
-  const token = localStorage.getItem('dropzone_token');
+  const token = window.localStorage.getItem(TOKEN_KEY);
 
   return io({
     transports: ['websocket'],
-    auth: token ? { token: `Bearer ${token}` } : undefined,
+    auth: token ? { token } : undefined,
   });
 }

@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import GameCanvas from '../components/GameCanvas';
+import { createSocket } from '../game/network/socket';
+import {
+  clearStoredSession,
+  setStoredSessionToken,
+  TOKEN_KEY,
+} from '../services/session';
 
-const TOKEN_KEY = 'dropzone_token';
 const EMPTY_FORM = {
   username: '',
   email: '',
@@ -63,9 +68,9 @@ export function App() {
         setUser(payload?.user ?? null);
       })
       .catch(() => {
+        clearStoredSession();
         setToken(null);
         setUser(null);
-        window.localStorage.removeItem(TOKEN_KEY);
       });
 
     return () => controller.abort();
@@ -73,12 +78,31 @@ export function App() {
 
   useEffect(() => {
     if (!token) {
-      window.localStorage.removeItem(TOKEN_KEY);
+      clearStoredSession();
       return;
     }
 
-    window.localStorage.setItem(TOKEN_KEY, token);
+    setStoredSessionToken(token);
   }, [token]);
+
+  useEffect(() => {
+    if (!playing || !token) return;
+
+    const socket = createSocket();
+    const onConnectError = (error) => {
+      if (error?.message === 'UNAUTHENTICATED') {
+        clearStoredSession();
+        setToken(null);
+        setUser(null);
+        setPlaying(false);
+        setError('Session expired, please log in again');
+        socket.disconnect();
+      }
+    };
+
+    socket.on('connect_error', onConnectError);
+    return () => socket.disconnect();
+  }, [playing, token]);
 
   const handleInputChange = (event) => {
     const { name, value } = event.target;
@@ -118,6 +142,7 @@ export function App() {
       setToken(data.token);
       setUser(data.user);
       setForm(EMPTY_FORM);
+      setError('');
       setPlaying(true);
     } catch (err) {
       setError(err.message || 'Authentication failed.');
@@ -127,6 +152,7 @@ export function App() {
   };
 
   const handleLogout = () => {
+    clearStoredSession();
     setToken(null);
     setUser(null);
     setForm(EMPTY_FORM);
